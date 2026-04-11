@@ -3482,6 +3482,15 @@ if(window.\(JavaScriptBridgeJS.get_JAVASCRIPT_BRIDGE_NAME())[\(_callHandlerID)] 
         }
         windowBeforeCreatedCallbacks.removeAll()
     }
+
+    /// Objective-C entry for teardown from `FlutterWebViewController`. Some OS versions SIGBUS
+    /// when Swift calls `InAppWebView.dispose()` through a statically-typed `InAppWebView`
+    /// reference during/after platform-view deallocation; `performSelector` avoids that path.
+    @objc(iaw_fullDisposeFromController)
+    func iaw_fullDisposeFromController() {
+        pullToRefreshControl?.delegate = nil
+        dispose()
+    }
     
     public func dispose() {
         channelDelegate?.dispose()

@@ -12,6 +12,10 @@ public class FlutterWebViewController: NSObject, FlutterPlatformView, Disposable
 
     var myView: UIView?
     var keepAliveId: String?
+    /// Strong reference so teardown never relies on `as? InAppWebView` over subviews.
+    /// That cast during deallocation can SIGBUS (bad metadata / PAC) on some OS versions.
+    private var embeddedWebView: InAppWebView?
+    private var didDisposeEmbeddedWebView = false
 
     init(plugin: SwiftFlutterPlugin, withFrame frame: CGRect, viewIdentifier viewId: Any, params: NSDictionary) {
         super.init()
@@ -80,9 +84,13 @@ public class FlutterWebViewController: NSObject, FlutterPlatformView, Disposable
         webView!.settings = settings
         webView!.prepare()
         webView!.windowCreated = true
+        embeddedWebView = webView
     }
     
     public func webView() -> InAppWebView? {
+        if let embedded = embeddedWebView {
+            return embedded
+        }
         for subview in myView?.subviews ?? []
         {
             if let item = subview as? InAppWebView
@@ -186,26 +194,87 @@ public class FlutterWebViewController: NSObject, FlutterPlatformView, Disposable
     // method added to fix:
     // https://github.com/pichillilorenzo/flutter_inappwebview/issues/1837
     public func dispose(removeFromSuperview: Bool) {
-        if keepAliveId == nil {
-            if let webView = webView() {
-                webView.dispose()
-                if removeFromSuperview {
-                    webView.removeFromSuperview()
-                }
-            }
+        if keepAliveId != nil {
+            return
+        }
+        guard !didDisposeEmbeddedWebView else {
             if removeFromSuperview {
                 myView?.removeFromSuperview()
             }
             myView = nil
+            return
         }
+        didDisposeEmbeddedWebView = true
+        var webView = embeddedWebView
+        if webView == nil {
+            for subview in myView?.subviews ?? [] {
+                if let w = subview as? InAppWebView {
+                    webView = w
+                    break
+                }
+            }
+        }
+        embeddedWebView = nil
+        if let webView = webView {
+            Self.tearDownEmbeddedWebViewSynchronously(webView as WKWebView)
+        }
+        if removeFromSuperview {
+            myView?.removeFromSuperview()
+        }
+        myView = nil
     }
     
     public func dispose() {
         dispose(removeFromSuperview: false)
     }
+
+    /// Flutter's platform-view map often drops the last retain of this controller from inside
+    /// `DisposeViews`, so `deinit` runs while ObjC/Swift teardown is still unwinding. Calling
+    /// `InAppWebView.dispose()` synchronously in that window can SIGBUS on the type metadata of
+    /// `InAppWebView` on recent OS runtimes. Defer full web-view disposal to the next main turn.
+    private func disposeDeferredAfterDeinit() {
+        if keepAliveId != nil {
+            return
+        }
+        guard !didDisposeEmbeddedWebView else {
+            myView = nil
+            return
+        }
+        didDisposeEmbeddedWebView = true
+        var webView = embeddedWebView
+        if webView == nil {
+            for subview in myView?.subviews ?? [] {
+                if let w = subview as? InAppWebView {
+                    webView = w
+                    break
+                }
+            }
+        }
+        embeddedWebView = nil
+        myView = nil
+        guard let webView = webView else { return }
+        let wkOnly: WKWebView = webView
+        DispatchQueue.main.async {
+            Self.tearDownEmbeddedWebViewSynchronously(wkOnly)
+        }
+    }
+
+    private static let fullDisposeSelector = NSSelectorFromString("iaw_fullDisposeFromController")
+
+    /// Uses `WKWebView` typing and Obj-C dispatch into `InAppWebView` so this helper does not
+    /// perform Swift virtual calls on `InAppWebView` (avoids SIGBUS on type metadata on some OSes).
+    private static func tearDownEmbeddedWebViewSynchronously(_ wk: WKWebView) {
+        wk.stopLoading()
+        wk.navigationDelegate = nil
+        wk.uiDelegate = nil
+        wk.scrollView.delegate = nil
+        wk.removeFromSuperview()
+        guard wk.responds(to: fullDisposeSelector) else { return }
+        (wk as NSObject).performSelector(onMainThread: fullDisposeSelector, with: nil, waitUntilDone: true)
+    }
     
     deinit {
         debugPrint("FlutterWebViewController - dealloc")
-        dispose()
+        disposeDeferredAfterDeinit()
     }
 }

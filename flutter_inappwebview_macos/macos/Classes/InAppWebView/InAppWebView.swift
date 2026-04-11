@@ -2589,6 +2589,11 @@ if(window.\(JAVASCRIPT_BRIDGE_NAME)[\(_callHandlerID)] != null) {
         }
         windowBeforeCreatedCallbacks.removeAll()
     }
+
+    @objc(iaw_fullDisposeFromController)
+    func iaw_fullDisposeFromController() {
+        dispose()
+    }
     
     public func dispose() {
         channelDelegate?.dispose()

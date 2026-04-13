@@ -649,10 +649,8 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
                     // https://stackoverflow.com/questions/26573137/can-i-set-the-cookies-to-be-used-by-a-wkwebview/26577303#26577303
                     // Set Cookies in iOS 11 and above, initialize websiteDataStore before setting cookies
                     // See also https://forums.developer.apple.com/thread/97194
-                    // check if websiteDataStore has not been initialized before
-                    if(!settings.incognito && !settings.cacheEnabled) {
-                        configuration.websiteDataStore = WKWebsiteDataStore.nonPersistent()
-                    }
+                    // `cacheEnabled` only controls cache behavior. Cookie persistence should
+                    // continue to use the default website data store unless incognito is enabled.
                     for cookie in HTTPCookieStorage.shared.cookies ?? [] {
                         configuration.websiteDataStore.httpCookieStore.setCookie(cookie, completionHandler: nil)
                     }
@@ -1013,9 +1011,6 @@ public class InAppWebView: WKWebView, UIScrollViewDelegate, WKUIDelegate,
         
         if #available(iOS 11.0, *) {
             if (newSettingsMap["sharedCookiesEnabled"] != nil && settings?.sharedCookiesEnabled != newSettings.sharedCookiesEnabled && newSettings.sharedCookiesEnabled) {
-                if(!newSettings.incognito && !newSettings.cacheEnabled) {
-                    configuration.websiteDataStore = WKWebsiteDataStore.nonPersistent()
-                }
                 for cookie in HTTPCookieStorage.shared.cookies ?? [] {
                     configuration.websiteDataStore.httpCookieStore.setCookie(cookie, completionHandler: nil)
                 }

@@ -24,5 +24,5 @@ A new Flutter plugin project.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
   s.swift_version = '5.0'
 
-  s.dependency 'OrderedSet', '~>6.0.3'
+  # OrderedSet dependency removed; using native Swift arrays instead
 end

@@ -31,7 +31,7 @@ A new Flutter plugin.
   s.swift_version = '5.0'
 
   s.platforms = { :ios => '12.0' }
-  s.dependency 'OrderedSet', '~>6.0.3'
+  # OrderedSet dependency removed; using native Swift arrays instead
 
   s.default_subspec = 'Core'
 

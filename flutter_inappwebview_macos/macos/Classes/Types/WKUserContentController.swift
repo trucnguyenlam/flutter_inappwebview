@@ -7,7 +7,7 @@
 
 import Foundation
 import WebKit
-import OrderedSet
+// OrderedSet removed: use native arrays to preserve insertion order and uniqueness manually
 
 extension WKUserContentController {
     static var WINDOW_ID_PREFIX = "WINDOW-ID-"
@@ -29,8 +29,8 @@ extension WKUserContentController {
         }
     }
 
-    private static var _userOnlyScripts = [String: [WKUserScriptInjectionTime:OrderedSet<UserScript>]]()
-    var userOnlyScripts: [WKUserScriptInjectionTime:OrderedSet<UserScript>] {
+    private static var _userOnlyScripts = [String: [WKUserScriptInjectionTime:[UserScript]]]()
+    var userOnlyScripts: [WKUserScriptInjectionTime:[UserScript>] {
         get {
             let tmpAddress = String(format: "%p", unsafeBitCast(self, to: Int.self))
             return WKUserContentController._userOnlyScripts[tmpAddress] ?? [:]
@@ -41,8 +41,8 @@ extension WKUserContentController {
         }
     }
 
-    private static var _pluginScripts = [String: [WKUserScriptInjectionTime:OrderedSet<PluginScript>]]()
-    var pluginScripts: [WKUserScriptInjectionTime:OrderedSet<PluginScript>] {
+    private static var _pluginScripts = [String: [WKUserScriptInjectionTime:[PluginScript]]]()
+    var pluginScripts: [WKUserScriptInjectionTime:[PluginScript>] {
         get {
             let tmpAddress = String(format: "%p", unsafeBitCast(self, to: Int.self))
             return WKUserContentController._pluginScripts[tmpAddress] ?? [:]
@@ -58,12 +58,12 @@ extension WKUserContentController {
             contentWorlds = Set([WKContentWorld.page])
         }
         pluginScripts = [
-            .atDocumentStart: OrderedSet(sequence: []),
-            .atDocumentEnd: OrderedSet(sequence: []),
+            .atDocumentStart: [],
+            .atDocumentEnd: [],
         ]
         userOnlyScripts = [
-            .atDocumentStart: OrderedSet(sequence: []),
-            .atDocumentEnd: OrderedSet(sequence: []),
+            .atDocumentStart: [],
+            .atDocumentEnd: [],
         ]
     }
 
@@ -124,7 +124,12 @@ extension WKUserContentController {
         if #available(macOS 11.0, *) {
             contentWorlds.insert(userOnlyScript.contentWorld)
         }
-        userOnlyScripts[userOnlyScript.injectionTime]!.append(userOnlyScript)
+        // avoid duplicates (preserve OrderedSet semantics)
+        if !userOnlyScripts[userOnlyScript.injectionTime]!.contains(where: {
+            $0 === userOnlyScript || ($0.groupName == userOnlyScript.groupName && $0.source == userOnlyScript.source && $0.injectionTime == userOnlyScript.injectionTime && $0.isForMainFrameOnly == userOnlyScript.isForMainFrameOnly)
+        }) {
+            userOnlyScripts[userOnlyScript.injectionTime]!.append(userOnlyScript)
+        }
     }
 
     public func addUserOnlyScripts(_ userOnlyScripts: [UserScript]) {
@@ -137,7 +142,10 @@ extension WKUserContentController {
         if #available(macOS 11.0, *) {
             contentWorlds.insert(pluginScript.contentWorld)
         }
-        pluginScripts[pluginScript.injectionTime]!.append(pluginScript)
+        // avoid duplicates (preserve OrderedSet semantics)
+        if !pluginScripts[pluginScript.injectionTime]!.contains(where: { $0 == pluginScript }) {
+            pluginScripts[pluginScript.injectionTime]!.append(pluginScript)
+        }
     }
 
     public func addPluginScripts(_ pluginScripts: [PluginScript]) {
@@ -174,27 +182,33 @@ extension WKUserContentController {
     }
 
     public func removeUserOnlyScript(_ userOnlyScript: UserScript) {
-        userOnlyScripts[userOnlyScript.injectionTime]!.remove(userOnlyScript)
+        userOnlyScripts[userOnlyScript.injectionTime]!.removeAll(where: {
+            if $0 === userOnlyScript { return true }
+            return $0.groupName == userOnlyScript.groupName &&
+                $0.source == userOnlyScript.source &&
+                $0.injectionTime == userOnlyScript.injectionTime &&
+                $0.isForMainFrameOnly == userOnlyScript.isForMainFrameOnly
+        })
         removeUserScript(scriptToRemove: userOnlyScript)
     }
 
     public func removeUserOnlyScript(at index: Int, injectionTime: WKUserScriptInjectionTime) {
         let scriptToRemove = userOnlyScripts[injectionTime]![index]
-        userOnlyScripts[injectionTime]!.removeObject(at: index)
+        userOnlyScripts[injectionTime]!.remove(at: index)
         removeUserScript(scriptToRemove: scriptToRemove)
     }
 
     public func removeAllUserOnlyScripts() {
         let allUserOnlyScripts = Array(userOnlyScripts.compactMap({ $0.value }).joined())
 
-        userOnlyScripts[.atDocumentStart]!.removeAllObjects()
-        userOnlyScripts[.atDocumentEnd]!.removeAllObjects()
+        userOnlyScripts[.atDocumentStart]!.removeAll()
+        userOnlyScripts[.atDocumentEnd]!.removeAll()
 
         removeUserScripts(scriptsToRemove: allUserOnlyScripts)
     }
 
     public func removePluginScript(_ pluginScript: PluginScript) {
-        pluginScripts[pluginScript.injectionTime]!.remove(pluginScript)
+        pluginScripts[pluginScript.injectionTime]!.removeAll(where: { $0 == pluginScript })
         for messageHandlerName in pluginScript.messageHandlerNames {
             removeScriptMessageHandler(forName: messageHandlerName)
             if #available(macOS 11.0, *) {
@@ -209,8 +223,8 @@ extension WKUserContentController {
     public func removeAllPluginScripts() {
         let allPluginScripts = Array(pluginScripts.compactMap({ $0.value }).joined())
 
-        pluginScripts[.atDocumentStart]!.removeAllObjects()
-        pluginScripts[.atDocumentEnd]!.removeAllObjects()
+        pluginScripts[.atDocumentStart]!.removeAll()
+        pluginScripts[.atDocumentEnd]!.removeAll()
 
         removeUserScripts(scriptsToRemove: allPluginScripts)
     }
@@ -296,7 +310,7 @@ extension WKUserContentController {
         for script in allUserOnlyScripts {
             if let scriptName = script.groupName, scriptName == groupName {
                 scriptsToRemove.append(script)
-                userOnlyScripts[script.injectionTime]!.remove(script)
+                userOnlyScripts[script.injectionTime]!.removeAll(where: { $0 === script || ($0.groupName == script.groupName && $0.source == script.source) })
             }
         }
         removeUserScripts(scriptsToRemove: scriptsToRemove, shouldAddPreviousScripts: shouldAddPreviousScripts)
@@ -308,7 +322,7 @@ extension WKUserContentController {
         for script in allPluginScripts {
             if let scriptName = script.groupName, scriptName == groupName {
                 scriptsToRemove.append(script)
-                pluginScripts[script.injectionTime]!.remove(script)
+                pluginScripts[script.injectionTime]!.removeAll(where: { $0 == script })
             }
         }
         removeUserScripts(scriptsToRemove: scriptsToRemove, shouldAddPreviousScripts: shouldAddPreviousScripts)

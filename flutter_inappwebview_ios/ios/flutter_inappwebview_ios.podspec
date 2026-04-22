@@ -33,9 +33,4 @@ A new Flutter plugin.
   s.platforms = { :ios => '12.0' }
   # OrderedSet dependency removed; using native Swift arrays instead
 
-  s.default_subspec = 'Core'
-
-  s.subspec 'Core' do |core|
-    core.platform = :ios, '12.0'
-  end
 end
